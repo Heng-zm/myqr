@@ -12,14 +12,13 @@ import { Download, Share2, Bot, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { generateImage, GenerateImageOutput } from "@/ai/flows/generate-image-flow";
 import { generateQrContent, GenerateQrContentOutput } from "@/ai/flows/generate-qr-content-flow";
 import Image from "next/image";
-import { type HistoryItem } from "@/components/scan-history";
 import { Input } from "@/components/ui/input";
+import { useHistory } from "@/context/history-context";
 
-interface QrGeneratorProps {
-    onGenerate: (item: HistoryItem) => void;
-}
+interface QrGeneratorProps {}
 
-export function QrGenerator({ onGenerate }: QrGeneratorProps) {
+export function QrGenerator({}: QrGeneratorProps) {
+  const { addHistoryItem } = useHistory();
   const [value, setValue] = useState("");
   const [qrCodeData, setQrCodeData] = useState("");
   const { toast } = useToast();
@@ -42,7 +41,7 @@ export function QrGenerator({ onGenerate }: QrGeneratorProps) {
     }
     setQrCodeData(value);
     setGeneratedImage(null);
-    onGenerate({
+    addHistoryItem({
         content: value,
         type: 'Generated',
         timestamp: new Date().toISOString(),
@@ -63,7 +62,7 @@ export function QrGenerator({ onGenerate }: QrGeneratorProps) {
         const result = await generateQrContent({ topic: value });
         setValue(result.content);
         setQrCodeData(result.content);
-        onGenerate({
+        addHistoryItem({
             content: result.content,
             type: 'Generated',
             timestamp: new Date().toISOString(),

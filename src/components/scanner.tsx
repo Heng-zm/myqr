@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import jsQR from "jsqr";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +11,16 @@ import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link 
 import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
 import { textToSpeech, TextToSpeechOutput } from "@/ai/flows/text-to-speech-flow";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { type HistoryItem } from "@/components/scan-history";
 import { Badge } from "@/components/ui/badge";
+import { useHistory } from "@/context/history-context";
+import { throttle } from "@/lib/utils";
 
 interface ScannerProps {
   type: "QR" | "Barcode";
-  onScan: (item: HistoryItem) => void;
 }
 
-export function Scanner({ type, onScan }: ScannerProps) {
+export function Scanner({ type }: ScannerProps) {
+  const { addHistoryItem } = useHistory();
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -58,9 +59,9 @@ export function Scanner({ type, onScan }: ScannerProps) {
     stopScanningAnimation();
     stopCamera();
     setScanResult(result);
-    onScan({ content: result, type: type, timestamp: new Date().toISOString() });
+    addHistoryItem({ content: result, type: type, timestamp: new Date().toISOString() });
     runAnalysis(result);
-  }, [onScan, type, stopScanningAnimation, stopCamera]);
+  }, [addHistoryItem, type, stopScanningAnimation, stopCamera]);
   
   const scanFromCanvas = useCallback(() => {
     if (canvasRef.current) {
@@ -79,7 +80,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
   }, []);
 
 
-  const scanFromVideo = useCallback(() => {
+  const scanFromVideo = useMemo(() => throttle(() => {
     if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -97,84 +98,76 @@ export function Scanner({ type, onScan }: ScannerProps) {
         }
       }
     }
+  }, 250), [handleScanSuccess, scanFromCanvas]);
+
+
+  const tick = useCallback(() => {
     if (isScanning) {
-        animationFrameId.current = requestAnimationFrame(scanFromVideo);
+        scanFromVideo();
+        animationFrameId.current = requestAnimationFrame(tick);
     }
-  }, [handleScanSuccess, isScanning, scanFromCanvas]);
+  }, [isScanning, scanFromVideo]);
 
   useEffect(() => {
     const getCameraPermission = async () => {
-      // Only ask for permission if it hasn't been determined yet
-      if (hasCameraPermission === null) {
-        try {
-          // We ask for the stream but don't use it here, just to trigger the permission prompt.
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          setHasCameraPermission(true);
-          // Stop the tracks immediately as we'll request it again when user clicks scan.
-          stream.getTracks().forEach(track => track.stop());
-        } catch (error) {
-          console.error('Error accessing camera:', error);
-          setHasCameraPermission(false);
-        }
+      if (hasCameraPermission !== null) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({video: true});
+        setHasCameraPermission(true);
+        stream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        setHasCameraPermission(false);
       }
     };
-    
     getCameraPermission();
   }, [hasCameraPermission]);
 
-
-  useEffect(() => {
-    // Cleanup function to stop camera when component unmounts
-    return () => {
-      stopCamera();
-      stopScanningAnimation();
-    };
-  }, [stopCamera, stopScanningAnimation]);
-
-
   useEffect(() => {
     if (isScanning && hasCameraPermission) {
-        animationFrameId.current = requestAnimationFrame(scanFromVideo);
+        const startCamera = async () => {
+             try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
+                    animationFrameId.current = requestAnimationFrame(tick);
+                }
+             } catch (error) {
+                console.error("Error starting camera:", error);
+                setIsScanning(false);
+                setHasCameraPermission(false);
+             }
+        }
+        startCamera();
     } else {
         stopScanningAnimation();
+        stopCamera();
     }
-    return () => stopScanningAnimation();
-  }, [isScanning, hasCameraPermission, scanFromVideo, stopScanningAnimation]);
+    return () => {
+        stopCamera();
+        stopScanningAnimation();
+    };
+  }, [isScanning, hasCameraPermission, tick, stopCamera, stopScanningAnimation]);
 
-
-  const handleStartScan = async () => {
+  const handleStartScan = () => {
+    if(hasCameraPermission === false) {
+        toast({
+            variant: 'destructive',
+            title: 'Camera Access Denied',
+            description: 'Please enable camera permissions in your browser settings to use this app.',
+        });
+        return;
+    }
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
     setIsScanning(true);
-    
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
-      setHasCameraPermission(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch (error) {
-      console.error("Error accessing camera:", error);
-      setIsScanning(false);
-      setHasCameraPermission(false);
-      let description = 'There was an error accessing the camera.';
-      if (error instanceof Error && error.name === "NotAllowedError") {
-          description = 'Please enable camera permissions in your browser settings to use this app.';
-      }
-      toast({
-        variant: 'destructive',
-        title: 'Camera Access Denied',
-        description: description,
-      });
-    }
   };
   
   const handleStopScan = () => {
     setIsScanning(false);
-    stopCamera();
   };
   
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,7 +201,6 @@ export function Scanner({ type, onScan }: ScannerProps) {
       };
       reader.readAsDataURL(file);
     }
-    // Reset file input to allow re-uploading the same file
     if(event.target) event.target.value = '';
   };
 
@@ -263,7 +255,6 @@ export function Scanner({ type, onScan }: ScannerProps) {
     }
   }, [audio])
 
-
   const handleCopy = () => {
     if (!scanResult) return;
     navigator.clipboard.writeText(scanResult).then(() => {
@@ -280,7 +271,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
-    setIsScanning(false); // Go back to the initial state
+    setIsScanning(false);
   };
   
   if (scanResult) {
@@ -382,7 +373,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
               <p className="text-xs">Use your camera or upload an image.</p>
             </div>
           )}
-
+          
           { hasCameraPermission === false && (
              <Alert variant="destructive" className="absolute inset-4 h-fit">
                 <VideoOff className="h-4 w-4" />
@@ -416,7 +407,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
             <Button 
               onClick={isScanning ? handleStopScan : handleStartScan} 
               size="lg"
-              disabled={hasCameraPermission === false}
+              disabled={hasCameraPermission === null}
             >
               {isScanning ? (
                 <>

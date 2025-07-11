@@ -1,51 +1,23 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, Suspense, lazy } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Scanner } from "@/components/scanner";
-import { QrGenerator } from "@/components/qr-generator";
 import { Icons } from "@/components/icons";
-import { ScanHistory, type HistoryItem } from "@/components/scan-history";
+import { ScanHistory } from "@/components/scan-history";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
+import { HistoryProvider, useHistory } from "@/context/history-context";
 
-export default function Home() {
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+// Lazy load components
+const QrGenerator = lazy(() => import("@/components/qr-generator").then(module => ({ default: module.QrGenerator })));
+const Scanner = lazy(() => import("@/components/scanner").then(module => ({ default: module.Scanner })));
 
-  useEffect(() => {
-    try {
-      const storedHistory = localStorage.getItem("scanHistory");
-      if (storedHistory) {
-        setHistory(JSON.parse(storedHistory));
-      }
-    } catch (error) {
-      console.error("Could not load scan history from localStorage", error);
-    }
-  }, []);
-
-  const handleNewHistoryItem = (newItem: HistoryItem) => {
-    setHistory((prevHistory) => {
-      const newHistory = [newItem, ...prevHistory].slice(0, 50); // Keep last 50 scans
-      try {
-        localStorage.setItem("scanHistory", JSON.stringify(newHistory));
-      } catch (error) {
-        console.error("Could not save scan history to localStorage", error);
-      }
-      return newHistory;
-    });
-  };
-
-  const handleClearHistory = () => {
-    setHistory([]);
-    try {
-      localStorage.removeItem("scanHistory");
-    } catch (error) {
-      console.error("Could not clear scan history from localStorage", error);
-    }
-  };
+function HomeComponent() {
+  const { history, clearHistory } = useHistory();
 
   const handleExportHistory = () => {
+    if (history.length === 0) return;
     const csvHeader = "Type,Content,Timestamp\n";
     const csvRows = history
       .map((item) => {
@@ -66,6 +38,11 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
+  const renderSuspenseFallback = () => (
+    <div className="flex items-center justify-center h-96">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center bg-background p-4 sm:p-6 lg:p-8">
@@ -88,15 +65,17 @@ export default function Home() {
             <TabsTrigger value="barcode">Scan Barcode</TabsTrigger>
             <TabsTrigger value="generate">Generate QR</TabsTrigger>
           </TabsList>
-          <TabsContent value="qr">
-            <Scanner type="QR" onScan={handleNewHistoryItem} />
-          </TabsContent>
-          <TabsContent value="barcode">
-            <Scanner type="Barcode" onScan={handleNewHistoryItem} />
-          </TabsContent>
-          <TabsContent value="generate">
-            <QrGenerator onGenerate={handleNewHistoryItem}/>
-          </TabsContent>
+          <Suspense fallback={renderSuspenseFallback()}>
+            <TabsContent value="qr">
+              <Scanner type="QR" />
+            </TabsContent>
+            <TabsContent value="barcode">
+              <Scanner type="Barcode" />
+            </TabsContent>
+            <TabsContent value="generate">
+              <QrGenerator />
+            </TabsContent>
+          </Suspense>
         </Tabs>
 
         {history.length > 0 && (
@@ -108,7 +87,7 @@ export default function Home() {
                    <Download className="mr-2 h-4 w-4" />
                    Export CSV
                  </Button>
-                <Button variant="outline" size="sm" onClick={handleClearHistory}>
+                <Button variant="outline" size="sm" onClick={clearHistory}>
                   Clear History
                 </Button>
               </div>
@@ -122,4 +101,12 @@ export default function Home() {
       </footer>
     </div>
   );
+}
+
+export default function Home() {
+  return (
+    <HistoryProvider>
+      <HomeComponent />
+    </HistoryProvider>
+  )
 }

@@ -186,7 +186,7 @@ export function QrGenerator({}: QrGeneratorProps) {
         qrImg.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`;
     };
 
-    if (generatedImage && aiBackgroundImage) {
+    if (generatedImage && aiBackgroundImage && generatedImage.prompt === qrCodeData) {
         const bgImg = new window.Image();
         bgImg.crossOrigin = "anonymous";
         bgImg.onload = () => {
@@ -223,7 +223,12 @@ export function QrGenerator({}: QrGeneratorProps) {
             text: `QR Code for: ${qrCodeData}`,
             url: window.location.href,
         });
-      } catch (error) {
+      } catch (error: any) {
+        // Don't show an error if the user cancelled the share
+        if (error.name === 'AbortError') {
+            console.log('Share was cancelled by the user.');
+            return;
+        }
         console.error('Error sharing:', error);
         toast({
             variant: "destructive",

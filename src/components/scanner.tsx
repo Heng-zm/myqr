@@ -1,19 +1,18 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import jsQR from "jsqr";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode, Volume2, Waves, Upload, Camera } from "lucide-react";
+import { QrCode, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode, Volume2, Waves, Upload, Camera } from "lucide-react";
 import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
 import { textToSpeech, TextToSpeechOutput } from "@/ai/flows/text-to-speech-flow";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { useHistory } from "@/context/history-context";
-import { throttle } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
 
 interface ScannerProps {
   type: "QR" | "Barcode";
@@ -52,16 +51,15 @@ export function Scanner({ type }: ScannerProps) {
     if (videoRef.current) {
         videoRef.current.srcObject = null;
     }
+    setIsScanning(false);
   }, []);
 
   const handleScanSuccess = useCallback((result: string) => {
-    setIsScanning(false);
-    stopScanningAnimation();
     stopCamera();
     setScanResult(result);
     addHistoryItem({ content: result, type: type, timestamp: new Date().toISOString() });
     runAnalysis(result);
-  }, [addHistoryItem, type, stopScanningAnimation, stopCamera]);
+  }, [addHistoryItem, type, stopCamera]);
   
   const scanFromCanvas = useCallback(() => {
     if (canvasRef.current) {
@@ -79,8 +77,7 @@ export function Scanner({ type }: ScannerProps) {
     return null;
   }, []);
 
-
-  const scanFromVideo = useMemo(() => throttle(() => {
+  const tick = useCallback(() => {
     if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -98,15 +95,44 @@ export function Scanner({ type }: ScannerProps) {
         }
       }
     }
-  }, 250), [handleScanSuccess, scanFromCanvas]);
+    animationFrameId.current = requestAnimationFrame(tick);
+  }, [handleScanSuccess, scanFromCanvas]);
 
 
-  const tick = useCallback(() => {
-    if (isScanning) {
-        scanFromVideo();
-        animationFrameId.current = requestAnimationFrame(tick);
+  const startScan = useCallback(async () => {
+    setScanResult(null);
+    setAnalysis(null);
+    setAudio(null);
+    
+    if (hasCameraPermission === false) {
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Required',
+        description: 'Please enable camera permissions in your browser settings to use this feature.',
+      });
+      return;
     }
-  }, [isScanning, scanFromVideo]);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setIsScanning(true);
+        animationFrameId.current = requestAnimationFrame(tick);
+      }
+    } catch (error) {
+      console.error("Error starting camera:", error);
+      setHasCameraPermission(false);
+      setIsScanning(false);
+      toast({
+        variant: 'destructive',
+        title: 'Camera Error',
+        description: 'Could not start the camera. Please check permissions and try again.',
+      });
+    }
+  }, [hasCameraPermission, tick, toast]);
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -124,51 +150,11 @@ export function Scanner({ type }: ScannerProps) {
   }, [hasCameraPermission]);
 
   useEffect(() => {
-    if (isScanning && hasCameraPermission) {
-        const startCamera = async () => {
-             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                streamRef.current = stream;
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    await videoRef.current.play();
-                    animationFrameId.current = requestAnimationFrame(tick);
-                }
-             } catch (error) {
-                console.error("Error starting camera:", error);
-                setIsScanning(false);
-                setHasCameraPermission(false);
-             }
-        }
-        startCamera();
-    } else {
-        stopScanningAnimation();
-        stopCamera();
-    }
     return () => {
         stopCamera();
         stopScanningAnimation();
     };
-  }, [isScanning, hasCameraPermission, tick, stopCamera, stopScanningAnimation]);
-
-  const handleStartScan = () => {
-    if(hasCameraPermission === false) {
-        toast({
-            variant: 'destructive',
-            title: 'Camera Access Denied',
-            description: 'Please enable camera permissions in your browser settings to use this app.',
-        });
-        return;
-    }
-    setScanResult(null);
-    setAnalysis(null);
-    setAudio(null);
-    setIsScanning(true);
-  };
-  
-  const handleStopScan = () => {
-    setIsScanning(false);
-  };
+  }, [stopCamera, stopScanningAnimation]);
   
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -261,7 +247,6 @@ export function Scanner({ type }: ScannerProps) {
       setIsCopied(true);
       toast({
         title: "Copied to clipboard!",
-        description: scanResult,
       });
       setTimeout(() => setIsCopied(false), 2000);
     });
@@ -271,7 +256,6 @@ export function Scanner({ type }: ScannerProps) {
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
-    setIsScanning(false);
   };
   
   if (scanResult) {
@@ -288,25 +272,23 @@ export function Scanner({ type }: ScannerProps) {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="p-4 rounded-lg bg-muted">
             <p className="break-all font-mono text-sm text-muted-foreground">{scanResult}</p>
           </div>
           
-            <div className="mt-4">
-              <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-                <AccordionItem value="item-1">
-                  <AccordionTrigger className="text-base font-semibold">
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-5 w-5 text-primary" />
-                      <span>AI Analysis</span>
-                      {isAnalyzing && <Loader2 className="h-4 w-4 animate-spin" />}
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    {isAnalyzing && <p className="text-sm text-muted-foreground pt-4 text-center">Analyzing...</p>}
-                    {analysis ? (
-                      <div className="space-y-4 pt-2 text-sm">
+            <Separator />
+
+             <div className="space-y-3">
+                 <div className="flex items-center gap-2 font-semibold">
+                    <Bot className="h-5 w-5 text-primary" />
+                    <span>AI Analysis</span>
+                    {isAnalyzing && <Loader2 className="h-4 w-4 animate-spin" />}
+                 </div>
+                 {isAnalyzing ? (
+                    <p className="text-sm text-muted-foreground pt-4 text-center">Analyzing...</p>
+                 ) : analysis ? (
+                    <div className="space-y-4 pt-2 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="text-muted-foreground">Content Type</span>
                           <Badge variant="secondary">{analysis.contentType}</Badge>
@@ -332,22 +314,30 @@ export function Scanner({ type }: ScannerProps) {
                            </div>
                         </div>
                       </div>
-                    ) : (
-                      !isAnalyzing && <p className="text-sm text-muted-foreground pt-4 text-center">No analysis available.</p>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+                 ) : (
+                    <p className="text-sm text-muted-foreground pt-4 text-center">No analysis available.</p>
+                 )}
             </div>
           
         </CardContent>
         <CardFooter className="flex justify-end gap-2">
+           <a 
+            href={scanResult.startsWith("http") ? scanResult : `https://www.google.com/search?q=${encodeURIComponent(scanResult)}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="mr-auto"
+          >
+            <Button variant="link">
+              <LinkIcon className="mr-2 h-4 w-4" />
+              Open Link
+            </Button>
+          </a>
           <Button variant="outline" onClick={handleScanAgain}>
-            <RefreshCw />
+            <RefreshCw className="mr-2 h-4 w-4" />
             Scan Again
           </Button>
           <Button onClick={handleCopy} disabled={isCopied}>
-            {isCopied ? <Check /> : <Copy />}
+            {isCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
             {isCopied ? "Copied" : "Copy"}
           </Button>
         </CardFooter>
@@ -361,10 +351,12 @@ export function Scanner({ type }: ScannerProps) {
         <CardTitle>Scan a {type} Code</CardTitle>
         <CardDescription>Position the code inside the frame to scan it automatically, or upload an image.</CardDescription>
        </CardHeader>
-      <CardContent className="flex flex-col items-center justify-center p-6">
-        <div className={`relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed bg-muted overflow-hidden ${isScanning ? 'border-primary animate-pulse-border' : 'border-primary/20'}`}>
+      <CardContent className="flex flex-col items-center justify-center p-6 space-y-4">
+        <div className="relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-2 border-dashed bg-muted overflow-hidden border-primary/20">
           
-          <video ref={videoRef} className={`w-full h-full object-cover ${isScanning ? '' : 'hidden'}`} playsInline autoPlay muted />
+          <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
+
+          {isScanning && <div className="scan-line" />}
 
            { !isScanning && hasCameraPermission !== false && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
@@ -387,13 +379,13 @@ export function Scanner({ type }: ScannerProps) {
           <canvas ref={canvasRef} className="hidden" />
         </div>
         
-        <div className="grid grid-cols-2 gap-2 w-full">
+        <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
             <Button 
                 onClick={() => fileInputRef.current?.click()}
                 variant="outline"
                 size="lg"
             >
-                <Upload />
+                <Upload className="mr-2 h-4 w-4"/>
                 Upload Image
             </Button>
             <input
@@ -405,18 +397,18 @@ export function Scanner({ type }: ScannerProps) {
             />
 
             <Button 
-              onClick={isScanning ? handleStopScan : handleStartScan} 
+              onClick={isScanning ? stopCamera : startScan} 
               size="lg"
-              disabled={hasCameraPermission === null}
+              disabled={hasCameraPermission === null || hasCameraPermission === false}
             >
               {isScanning ? (
                 <>
-                  <Loader2 className="animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Stop Scan
                 </>
               ) : (
                 <>
-                  <Camera />
+                  <Camera className="mr-2 h-4 w-4"/>
                   Use Camera
                 </>
               )}

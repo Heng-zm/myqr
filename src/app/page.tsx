@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Icons } from "@/components/icons";
 import { ScanHistory } from "@/components/scan-history";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
 import { HistoryProvider, useHistory } from "@/context/history-context";
 
 // Lazy load components
@@ -83,11 +83,12 @@ function HomeComponent() {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight">Scan History</h2>
               <div className="flex gap-2">
-                 <Button variant="outline" size="sm" onClick={handleExportHistory}>
+                 <Button variant="outline" size="sm" onClick={handleExportHistory} disabled={history.length === 0}>
                    <Download className="mr-2 h-4 w-4" />
                    Export CSV
                  </Button>
-                <Button variant="outline" size="sm" onClick={clearHistory}>
+                <Button variant="destructive" size="sm" onClick={clearHistory}>
+                  <Trash2 className="mr-2 h-4 w-4" />
                   Clear History
                 </Button>
               </div>

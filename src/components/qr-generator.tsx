@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Download, Share2, Bot, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { generateImage, GenerateImageOutput } from "@/ai/flows/generate-image-flow";
-import { generateQrContent, GenerateQrContentOutput } from "@/ai/flows/generate-qr-content-flow";
+import { generateQrContent } from "@/ai/flows/generate-qr-content-flow";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { useHistory } from "@/context/history-context";
@@ -27,8 +27,6 @@ export function QrGenerator({}: QrGeneratorProps) {
   const [generatedImage, setGeneratedImage] = useState<GenerateImageOutput & { prompt: string } | null>(null);
   const [bgColor, setBgColor] = useState("#FFFFFF");
   const [fgColor, setFgColor] = useState("#000000");
-  const finalImageRef = useRef<HTMLDivElement>(null);
-
 
   const handleGenerate = () => {
     if (!value) {
@@ -122,8 +120,11 @@ export function QrGenerator({}: QrGeneratorProps) {
             const qrSize = 160;
             const x = (canvasSize - qrSize) / 2;
             const y = (canvasSize - qrSize) / 2;
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(x - 10, y - 10, qrSize + 20, qrSize + 20); // White padding
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.roundRect(x - 10, y - 10, qrSize + 20, qrSize + 20, 8);
+            ctx.fill();
+
             ctx.drawImage(qrImg, x, y, qrSize, qrSize);
             
             const pngFile = canvas.toDataURL("image/png");
@@ -132,7 +133,7 @@ export function QrGenerator({}: QrGeneratorProps) {
             downloadLink.href = pngFile;
             downloadLink.click();
         };
-        qrImg.src = `data:image/svg+xml;base64,${btoa(svgData)}`;
+        qrImg.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`;
     };
 
     if (generatedImage && aiImage) {
@@ -144,9 +145,23 @@ export function QrGenerator({}: QrGeneratorProps) {
         };
         bgImg.src = aiImage.src;
     } else {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, canvasSize, canvasSize);
-        drawQrCode();
+        const tempCanvas = document.createElement("canvas");
+        const tempCtx = tempCanvas.getContext("2d");
+        if (!tempCtx || !svg) return;
+
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const img = new window.Image();
+        img.onload = () => {
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            tempCtx.drawImage(img, 0, 0);
+            const pngFile = tempCanvas.toDataURL("image/png");
+            const downloadLink = document.createElement("a");
+            downloadLink.download = "qrcode.png";
+            downloadLink.href = pngFile;
+            downloadLink.click();
+        }
+        img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`;
     }
   }
 
@@ -189,7 +204,7 @@ export function QrGenerator({}: QrGeneratorProps) {
       <CardContent className="space-y-4">
         {qrCodeData ? (
           <div className="flex flex-col items-center justify-center space-y-4 rounded-lg bg-muted/50 p-6">
-             <div ref={finalImageRef} className="relative h-80 w-80 flex items-center justify-center rounded-lg border shadow-md overflow-hidden bg-background">
+             <div className="relative h-80 w-80 flex items-center justify-center rounded-lg border shadow-md overflow-hidden bg-background">
                 {isGeneratingImage ? (
                     <div className="flex flex-col items-center justify-center h-full w-full bg-background/50">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -209,17 +224,32 @@ export function QrGenerator({}: QrGeneratorProps) {
                          </div>
                     </>
                 ) : (
-                    <div className="p-4 flex items-center justify-center" style={{ background: bgColor }}>
+                    <div className="p-4 bg-white flex items-center justify-center">
                         <QRCode id="QRCode" value={qrCodeData} size={256} bgColor={bgColor} fgColor={fgColor} />
                     </div>
                 )}
              </div>
 
-            <div className="flex flex-wrap justify-center gap-2 pt-4">
-              <Button onClick={handleGenerateImage} disabled={isGeneratingImage}>
+            <div className="w-full space-y-4 pt-4">
+              <Button onClick={handleGenerateImage} disabled={isGeneratingImage} className="w-full">
                 {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                {isGeneratingImage ? 'Generating...' : 'Customize with AI'}
+                {isGeneratingImage ? 'Generating...' : 'Customize with AI Background'}
               </Button>
+               {!generatedImage && (
+                <div className="space-y-3 pt-4 border-t border-border">
+                    <p className="text-sm font-medium text-center text-muted-foreground">Customize Colors</p>
+                    <div className="flex gap-4 justify-center">
+                        <div className="flex flex-col items-center gap-1.5">
+                            <Label htmlFor="bg-color">Background</Label>
+                            <Input id="bg-color" type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="p-1 h-10 w-14"/>
+                        </div>
+                         <div className="flex flex-col items-center gap-1.5">
+                            <Label htmlFor="fg-color">Foreground</Label>
+                            <Input id="fg-color" type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="p-1 h-10 w-14"/>
+                        </div>
+                    </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -232,7 +262,7 @@ export function QrGenerator({}: QrGeneratorProps) {
               placeholder="e.g. A journey of a thousand miles begins with a single step."
               rows={4}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
                  <Button onClick={handleGenerateContent} className="w-full" disabled={isGeneratingContent}>
                     {isGeneratingContent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                     {isGeneratingContent ? 'Generating...' : 'Generate with AI'}
@@ -240,21 +270,6 @@ export function QrGenerator({}: QrGeneratorProps) {
                  <Button onClick={handleGenerate} className="w-full">Generate QR Code</Button>
             </div>
           </div>
-        )}
-         {qrCodeData && !generatedImage && (
-            <div className="space-y-3 pt-4">
-                <p className="text-sm font-medium text-center text-muted-foreground">Customize Colors</p>
-                <div className="flex gap-4 justify-center">
-                    <div className="flex flex-col items-center gap-1.5">
-                        <Label htmlFor="bg-color">Background</Label>
-                        <Input id="bg-color" type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="p-1 h-10 w-14"/>
-                    </div>
-                     <div className="flex flex-col items-center gap-1.5">
-                        <Label htmlFor="fg-color">Foreground</Label>
-                        <Input id="fg-color" type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="p-1 h-10 w-14"/>
-                    </div>
-                </div>
-            </div>
         )}
       </CardContent>
       <CardFooter className="flex justify-end gap-2">

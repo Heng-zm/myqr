@@ -88,15 +88,15 @@ export default {
             height: '0',
           },
         },
-        'scan-line': {
-          '0%': { transform: 'translateY(-10%)' },
-          '100%': { transform: 'translateY(100%)' },
+        'pulse-border': {
+          '0%, 100%': { 'border-color': 'hsl(var(--primary) / 0.4)' },
+          '50%': { 'border-color': 'hsl(var(--primary))' },
         }
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'scan-line': 'scan-line 2s ease-in-out infinite',
+        'pulse-border': 'pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },
     },
   },

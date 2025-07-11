@@ -17,7 +17,7 @@ export function QrGenerator() {
   const [qrCodeData, setQrCodeData] = useState("");
   const { toast } = useToast();
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState<GenerateImageOutput | null>(null);
+  const [generatedImage, setGeneratedImage] = useState<GenerateImageOutput & { prompt: string } | null>(null);
 
   const handleGenerate = () => {
     if (!value) {
@@ -35,10 +35,13 @@ export function QrGenerator() {
   const handleGenerateImage = async () => {
     if (!qrCodeData) return;
     setIsGeneratingImage(true);
-    setGeneratedImage(null);
+    const prompt = qrCodeData;
     try {
-      const result = await generateImage({ prompt: qrCodeData });
-      setGeneratedImage(result);
+      const result = await generateImage({ prompt });
+      // Only set the image if the QR code content hasn't changed
+      if (qrCodeData === prompt) {
+        setGeneratedImage({ ...result, prompt });
+      }
     } catch (error) {
       console.error("Error generating image:", error);
       toast({
@@ -47,7 +50,10 @@ export function QrGenerator() {
         description: "Could not generate an AI image for your QR code.",
       });
     } finally {
-      setIsGeneratingImage(false);
+      // Only stop loading if the prompt is still the same
+      if (qrCodeData === prompt) {
+        setIsGeneratingImage(false);
+      }
     }
   }
 
@@ -111,7 +117,7 @@ export function QrGenerator() {
       <CardContent className="space-y-4">
         {qrCodeData ? (
           <div className="flex flex-col items-center justify-center space-y-4 rounded-lg bg-muted/50 p-6">
-             {generatedImage ? (
+             {generatedImage && generatedImage.prompt === qrCodeData ? (
                 <Image
                   src={generatedImage.imageUrl}
                   alt="AI generated image"
@@ -131,9 +137,9 @@ export function QrGenerator() {
              )}
 
             <div className="flex flex-wrap justify-center gap-2 pt-4">
-              {!generatedImage && (
+              {(!generatedImage || generatedImage.prompt !== qrCodeData) && (
                 <Button onClick={handleGenerateImage} disabled={isGeneratingImage}>
-                  {isGeneratingImage ? <Loader2 className="animate-spin" /> : <Bot />}
+                  {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                   {isGeneratingImage ? 'Generating...' : 'Generate AI Image'}
                 </Button>
               )}
@@ -156,12 +162,12 @@ export function QrGenerator() {
         {qrCodeData ? (
           <>
             <Button variant="ghost" onClick={handleReset}>
-                <RefreshCw /> Create Another
+                <RefreshCw className="mr-2 h-4 w-4" /> Create Another
             </Button>
-            {!generatedImage && (
+            {(!generatedImage || generatedImage.prompt !== qrCodeData) && (
               <>
-                {navigator.share && <Button variant="outline" onClick={handleShare}><Share2 />Share</Button>}
-                <Button onClick={handleDownload}><Download />Download QR</Button>
+                {navigator.share && <Button variant="outline" onClick={handleShare}><Share2 className="mr-2 h-4 w-4" />Share</Button>}
+                <Button onClick={handleDownload}><Download className="mr-2 h-4 w-4" />Download QR</Button>
               </>
             )}
           </>

@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Scanner } from "@/components/scanner";
+import { QrGenerator } from "@/components/qr-generator";
 import { Icons } from "@/components/icons";
 import { ScanHistory, type HistoryItem } from "@/components/scan-history";
 import { Button } from "@/components/ui/button";
@@ -53,15 +54,19 @@ export default function Home() {
       </header>
       <main className="w-full max-w-2xl">
         <Tabs defaultValue="qr" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="qr">QR Code</TabsTrigger>
             <TabsTrigger value="barcode">Barcode</TabsTrigger>
+            <TabsTrigger value="generate">Generate</TabsTrigger>
           </TabsList>
           <TabsContent value="qr">
             <Scanner type="QR" onScan={handleScan} />
           </TabsContent>
           <TabsContent value="barcode">
             <Scanner type="Barcode" onScan={handleScan} />
+          </TabsContent>
+          <TabsContent value="generate">
+            <QrGenerator />
           </TabsContent>
         </Tabs>
 

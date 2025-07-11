@@ -8,16 +8,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Share2, Bot, Loader2, RefreshCw } from "lucide-react";
+import { Download, Share2, Bot, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { generateImage, GenerateImageOutput } from "@/ai/flows/generate-image-flow";
+import { generateQrContent, GenerateQrContentOutput } from "@/ai/flows/generate-qr-content-flow";
 import Image from "next/image";
+import { type HistoryItem } from "@/components/scan-history";
+import { Input } from "@/components/ui/input";
 
-export function QrGenerator() {
+interface QrGeneratorProps {
+    onGenerate: (item: HistoryItem) => void;
+}
+
+export function QrGenerator({ onGenerate }: QrGeneratorProps) {
   const [value, setValue] = useState("");
   const [qrCodeData, setQrCodeData] = useState("");
   const { toast } = useToast();
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<GenerateImageOutput & { prompt: string } | null>(null);
+  const [bgColor, setBgColor] = useState("#FFFFFF");
+  const [fgColor, setFgColor] = useState("#000000");
 
   const handleGenerate = () => {
     if (!value) {
@@ -30,17 +40,52 @@ export function QrGenerator() {
     }
     setQrCodeData(value);
     setGeneratedImage(null);
+    onGenerate({
+        content: value,
+        type: 'Generated',
+        timestamp: new Date().toISOString(),
+    });
   };
+
+  const handleGenerateContent = async () => {
+    if(!value) {
+        toast({
+            variant: "destructive",
+            title: "Input Required",
+            description: "Please enter a topic to generate content.",
+        });
+        return;
+    }
+    setIsGeneratingContent(true);
+    try {
+        const result = await generateQrContent({ topic: value });
+        setValue(result.content);
+        setQrCodeData(result.content);
+        onGenerate({
+            content: result.content,
+            type: 'Generated',
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error("Error generating content:", error);
+        toast({
+            variant: "destructive",
+            title: "Content Generation Failed",
+            description: "Could not generate AI content for your topic.",
+        });
+    } finally {
+        setIsGeneratingContent(false);
+    }
+  }
 
   const handleGenerateImage = async () => {
     if (!qrCodeData) return;
+    const currentQrData = qrCodeData;
     setIsGeneratingImage(true);
-    const prompt = qrCodeData;
     try {
-      const result = await generateImage({ prompt });
-      // Only set the image if the QR code content hasn't changed
-      if (qrCodeData === prompt) {
-        setGeneratedImage({ ...result, prompt });
+      const result = await generateImage({ prompt: currentQrData });
+      if (qrCodeData === currentQrData) {
+        setGeneratedImage({ ...result, prompt: currentQrData });
       }
     } catch (error) {
       console.error("Error generating image:", error);
@@ -50,8 +95,7 @@ export function QrGenerator() {
         description: "Could not generate an AI image for your QR code.",
       });
     } finally {
-      // Only stop loading if the prompt is still the same
-      if (qrCodeData === prompt) {
+       if (qrCodeData === currentQrData) {
         setIsGeneratingImage(false);
       }
     }
@@ -109,7 +153,7 @@ export function QrGenerator() {
   }
 
   return (
-    <Card className="w-full shadow-lg">
+    <Card className="w-full shadow-lg border-primary/20">
       <CardHeader>
         <CardTitle>QR Code Generator</CardTitle>
         <CardDescription>Enter text or a URL to create your own QR code. You can even generate a unique AI image to go with it.</CardDescription>
@@ -131,8 +175,8 @@ export function QrGenerator() {
                     <p className="mt-4 text-sm text-muted-foreground">Generating your image...</p>
                 </div>
              ) : (
-                <div className="bg-white p-4 rounded-lg border shadow-md h-72 w-72 flex items-center justify-center">
-                    <QRCode id="QRCode" value={qrCodeData} size={256} />
+                <div className="p-4 rounded-lg border shadow-md h-72 w-72 flex items-center justify-center" style={{ background: bgColor }}>
+                    <QRCode id="QRCode" value={qrCodeData} size={256} bgColor={bgColor} fgColor={fgColor} />
                 </div>
              )}
 
@@ -147,7 +191,7 @@ export function QrGenerator() {
           </div>
         ) : (
           <div className="space-y-2">
-            <Label htmlFor="qr-content">Content</Label>
+            <Label htmlFor="qr-content">Content or AI Prompt</Label>
             <Textarea
               id="qr-content"
               value={value}
@@ -155,7 +199,29 @@ export function QrGenerator() {
               placeholder="e.g. A journey of a thousand miles begins with a single step."
               rows={4}
             />
+            <div className="flex gap-2">
+                 <Button onClick={handleGenerateContent} className="w-full" disabled={isGeneratingContent}>
+                    {isGeneratingContent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                    {isGeneratingContent ? 'Generating...' : 'Generate with AI'}
+                 </Button>
+                 <Button onClick={handleGenerate} className="w-full">Generate QR Code</Button>
+            </div>
           </div>
+        )}
+         {qrCodeData && !generatedImage && (
+            <div className="space-y-3 pt-4">
+                <p className="text-sm font-medium text-center text-muted-foreground">Customize Colors</p>
+                <div className="flex gap-4 justify-center">
+                    <div className="flex flex-col items-center gap-1.5">
+                        <Label htmlFor="bg-color">Background</Label>
+                        <Input id="bg-color" type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="p-1 h-10 w-14"/>
+                    </div>
+                     <div className="flex flex-col items-center gap-1.5">
+                        <Label htmlFor="fg-color">Foreground</Label>
+                        <Input id="fg-color" type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="p-1 h-10 w-14"/>
+                    </div>
+                </div>
+            </div>
         )}
       </CardContent>
       <CardFooter className="flex justify-end gap-2">
@@ -171,9 +237,7 @@ export function QrGenerator() {
               </>
             )}
           </>
-        ) : (
-            <Button onClick={handleGenerate}>Generate QR Code</Button>
-        )}
+        ) : null}
       </CardFooter>
     </Card>
   );

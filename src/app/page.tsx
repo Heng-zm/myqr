@@ -8,6 +8,7 @@ import { QrGenerator } from "@/components/qr-generator";
 import { Icons } from "@/components/icons";
 import { ScanHistory, type HistoryItem } from "@/components/scan-history";
 import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 
 export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -23,7 +24,7 @@ export default function Home() {
     }
   }, []);
 
-  const handleScan = (newItem: HistoryItem) => {
+  const handleNewHistoryItem = (newItem: HistoryItem) => {
     setHistory((prevHistory) => {
       const newHistory = [newItem, ...prevHistory].slice(0, 50); // Keep last 50 scans
       try {
@@ -43,6 +44,28 @@ export default function Home() {
       console.error("Could not clear scan history from localStorage", error);
     }
   };
+
+  const handleExportHistory = () => {
+    const csvHeader = "Type,Content,Timestamp\n";
+    const csvRows = history
+      .map((item) => {
+        const content = `"${item.content.replace(/"/g, '""')}"`; // Escape double quotes
+        return [item.type, content, item.timestamp].join(",");
+      })
+      .join("\n");
+
+    const csvContent = csvHeader + csvRows;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "codescan_history.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center bg-background p-4 sm:p-6 lg:p-8">
@@ -66,13 +89,13 @@ export default function Home() {
             <TabsTrigger value="generate">Generate QR</TabsTrigger>
           </TabsList>
           <TabsContent value="qr">
-            <Scanner type="QR" onScan={handleScan} />
+            <Scanner type="QR" onScan={handleNewHistoryItem} />
           </TabsContent>
           <TabsContent value="barcode">
-            <Scanner type="Barcode" onScan={handleScan} />
+            <Scanner type="Barcode" onScan={handleNewHistoryItem} />
           </TabsContent>
           <TabsContent value="generate">
-            <QrGenerator />
+            <QrGenerator onGenerate={handleNewHistoryItem}/>
           </TabsContent>
         </Tabs>
 
@@ -80,9 +103,15 @@ export default function Home() {
           <div className="mt-8">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight">Scan History</h2>
-              <Button variant="outline" size="sm" onClick={handleClearHistory}>
-                Clear History
-              </Button>
+              <div className="flex gap-2">
+                 <Button variant="outline" size="sm" onClick={handleExportHistory}>
+                   <Download className="mr-2 h-4 w-4" />
+                   Export CSV
+                 </Button>
+                <Button variant="outline" size="sm" onClick={handleClearHistory}>
+                  Clear History
+                </Button>
+              </div>
             </div>
             <ScanHistory items={history} />
           </div>

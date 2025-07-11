@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode, Volume2, Waves } from "lucide-react";
+import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode, Volume2, Waves, Upload, Camera } from "lucide-react";
 import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
 import { textToSpeech, TextToSpeechOutput } from "@/ai/flows/text-to-speech-flow";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -27,12 +27,14 @@ export function Scanner({ type, onScan }: ScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [analysis, setAnalysis] = useState<AnalyzeCodeOutput | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
   const [audio, setAudio] = useState<TextToSpeechOutput | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const stopScanningAnimation = useCallback(() => {
     if (animationFrameId.current) {
@@ -41,108 +43,160 @@ export function Scanner({ type, onScan }: ScannerProps) {
     }
   }, []);
 
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+        videoRef.current.srcObject = null;
+    }
+  }, []);
 
   const handleScanSuccess = useCallback((result: string) => {
     setIsScanning(false);
     stopScanningAnimation();
+    stopCamera();
     setScanResult(result);
     onScan({ content: result, type: type, timestamp: new Date().toISOString() });
     runAnalysis(result);
-  }, [onScan, type, stopScanningAnimation]);
+  }, [onScan, type, stopScanningAnimation, stopCamera]);
+  
+  const scanFromCanvas = useCallback(() => {
+    if (canvasRef.current) {
+        const context = canvasRef.current.getContext("2d", { willReadFrequently: true });
+        if (context) {
+            const imageData = context.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+            });
+            if (code && code.data) {
+                return code.data;
+            }
+        }
+    }
+    return null;
+  }, []);
 
-  const scan = useCallback(() => {
+
+  const scanFromVideo = useCallback(() => {
     if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const context = canvasRef.current.getContext("2d");
-
+      
+      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      
+      const context = canvas.getContext("2d");
       if (context) {
-        canvas.height = video.videoHeight;
-        canvas.width = video.videoWidth;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
-
-        if (code && code.data) {
-          handleScanSuccess(code.data);
-          return; 
+        const codeData = scanFromCanvas();
+        if (codeData) {
+            handleScanSuccess(codeData);
+            return;
         }
       }
     }
     if (isScanning) {
-        animationFrameId.current = requestAnimationFrame(scan);
+        animationFrameId.current = requestAnimationFrame(scanFromVideo);
     }
-  }, [handleScanSuccess, isScanning]);
-  
-  useEffect(() => {
-    const getCameraPermission = async () => {
-      setHasCameraPermission(null);
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        setHasCameraPermission(true);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        // Cleanup function
-        return () => {
-          stream.getTracks().forEach(track => track.stop());
-        };
-      } catch (error) {
-        console.error("Error accessing camera:", error);
-        setHasCameraPermission(false);
-        let description = 'There was an error accessing the camera.';
-        if (error instanceof Error && error.name === "NotAllowedError") {
-            description = 'Please enable camera permissions in your browser settings to use this app.';
-        }
-        toast({
-          variant: 'destructive',
-          title: 'Camera Access Denied',
-          description: description,
-        });
-      }
-    };
-    
-    const cleanupPromise = getCameraPermission();
+  }, [handleScanSuccess, isScanning, scanFromCanvas]);
 
+  const startCamera = useCallback(async () => {
+    stopCamera(); 
+    setHasCameraPermission(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      setHasCameraPermission(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      return stream;
+    } catch (error) {
+      console.error("Error accessing camera:", error);
+      setHasCameraPermission(false);
+      let description = 'There was an error accessing the camera.';
+      if (error instanceof Error && error.name === "NotAllowedError") {
+          description = 'Please enable camera permissions in your browser settings to use this app.';
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Denied',
+        description: description,
+      });
+      return null;
+    }
+  }, [stopCamera, toast]);
+  
+
+  useEffect(() => {
     return () => {
-        cleanupPromise.then(cleanup => cleanup && cleanup());
         stopScanningAnimation();
+        stopCamera();
     };
-  }, []);
+  }, [stopCamera, stopScanningAnimation]);
 
 
   useEffect(() => {
     if (isScanning && hasCameraPermission) {
-        if(videoRef.current?.paused) {
-            videoRef.current?.play().catch(console.error);
-        }
-        animationFrameId.current = requestAnimationFrame(scan);
+        animationFrameId.current = requestAnimationFrame(scanFromVideo);
     } else {
         stopScanningAnimation();
     }
     return () => stopScanningAnimation();
-  }, [isScanning, hasCameraPermission, scan, stopScanningAnimation]);
+  }, [isScanning, hasCameraPermission, scanFromVideo, stopScanningAnimation]);
 
 
-  const handleStartScan = () => {
-    if (hasCameraPermission) {
+  const handleStartScan = async () => {
+    const stream = await startCamera();
+    if(stream) {
         setScanResult(null);
         setAnalysis(null);
         setAudio(null);
         setIsScanning(true);
-    } else {
-        toast({
-            variant: "destructive",
-            title: "Camera Not Ready",
-            description: "Please grant camera permission to start scanning.",
-        });
     }
   };
   
   const handleStopScan = () => {
     setIsScanning(false);
+    stopCamera();
+  };
+  
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          if (canvasRef.current) {
+            const canvas = canvasRef.current;
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if(ctx) {
+                ctx.drawImage(img, 0, 0);
+                const codeData = scanFromCanvas();
+                if (codeData) {
+                    handleScanSuccess(codeData);
+                } else {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Scan Failed',
+                        description: `No ${type} code could be found in the uploaded image.`,
+                    });
+                }
+            }
+          }
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset file input to allow re-uploading the same file
+    if(event.target) event.target.value = '';
   };
 
   const runAnalysis = async (content: string) => {
@@ -205,7 +259,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
-    setIsScanning(true);
+    setIsScanning(false); // Go back to the initial state
   };
   
   if (scanResult) {
@@ -293,28 +347,22 @@ export function Scanner({ type, onScan }: ScannerProps) {
     <Card className="w-full shadow-lg border-primary/20">
        <CardHeader>
         <CardTitle>Scan a {type} Code</CardTitle>
-        <CardDescription>Position the code inside the frame to scan it automatically.</CardDescription>
+        <CardDescription>Position the code inside the frame to scan it automatically, or upload an image.</CardDescription>
        </CardHeader>
       <CardContent className="flex flex-col items-center justify-center p-6">
-        <div className={`relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed border-primary/20 bg-muted overflow-hidden ${isScanning ? 'animate-pulse-border' : ''}`}>
+        <div className={`relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed bg-muted overflow-hidden ${isScanning ? 'border-primary animate-pulse' : 'border-primary/20'}`}>
           
-          <video ref={videoRef} className={`w-full h-full object-cover ${hasCameraPermission ? '' : 'hidden'}`} playsInline autoPlay muted />
+          <video ref={videoRef} className={`w-full h-full object-cover ${isScanning ? '' : 'hidden'}`} playsInline autoPlay muted />
 
-          { hasCameraPermission === null && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80">
-              <Loader2 className="h-12 w-12 mb-2 animate-spin" />
-              <p>Requesting camera...</p>
-            </div>
-          )}
-          
-          { !isScanning && hasCameraPermission && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80">
+           { !isScanning && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
               <QrCode className="h-12 w-12 mb-2" />
               <p className="font-semibold">Ready to Scan</p>
+              <p className="text-xs">Use your camera or upload an image.</p>
             </div>
           )}
 
-          {hasCameraPermission === false && (
+          { hasCameraPermission === false && (
              <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
                 <VideoOff className="h-12 w-12 mb-2" />
                 <p className="font-semibold">Camera access denied</p>
@@ -325,24 +373,40 @@ export function Scanner({ type, onScan }: ScannerProps) {
           <canvas ref={canvasRef} className="hidden" />
         </div>
         
-        <Button 
-          onClick={isScanning ? handleStopScan : handleStartScan} 
-          className="w-full" 
-          size="lg"
-          disabled={hasCameraPermission === false}
-        >
-          {isScanning ? (
-            <>
-              <Loader2 className="animate-spin" />
-              Stop Scanning
-            </>
-          ) : (
-            <>
-              <ScanLine />
-              Start {type} Scan
-            </>
-          )}
-        </Button>
+        <div className="grid grid-cols-2 gap-2 w-full">
+            <Button 
+                onClick={() => fileInputRef.current?.click()}
+                variant="outline"
+                size="lg"
+            >
+                <Upload />
+                Upload Image
+            </Button>
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*"
+            />
+
+            <Button 
+              onClick={isScanning ? handleStopScan : handleStartScan} 
+              size="lg"
+            >
+              {isScanning ? (
+                <>
+                  <Loader2 className="animate-spin" />
+                  Stop Scan
+                </>
+              ) : (
+                <>
+                  <Camera />
+                  Use Camera
+                </>
+              )}
+            </Button>
+        </div>
       </CardContent>
     </Card>
   );

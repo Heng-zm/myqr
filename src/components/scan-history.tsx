@@ -3,12 +3,12 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Barcode, Clock, QrCode } from "lucide-react";
+import { Barcode, Clock, QrCode, Wand2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export interface HistoryItem {
   content: string;
-  type: "QR" | "Barcode";
+  type: "QR" | "Barcode" | "Generated";
   timestamp: string;
 }
 
@@ -17,6 +17,19 @@ interface ScanHistoryProps {
 }
 
 export function ScanHistory({ items }: ScanHistoryProps) {
+    const getIcon = (type: HistoryItem['type']) => {
+        switch (type) {
+            case 'QR':
+                return <QrCode className="h-5 w-5 text-muted-foreground" />;
+            case 'Barcode':
+                return <Barcode className="h-5 w-5 text-muted-foreground" />;
+            case 'Generated':
+                return <Wand2 className="h-5 w-5 text-muted-foreground" />;
+            default:
+                return <QrCode className="h-5 w-5 text-muted-foreground" />;
+        }
+    }
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -25,11 +38,7 @@ export function ScanHistory({ items }: ScanHistoryProps) {
             {items.map((item, index) => (
               <div key={index} className="flex items-start gap-4">
                 <div className="mt-1">
-                  {item.type === "QR" ? (
-                    <QrCode className="h-5 w-5 text-muted-foreground" />
-                  ) : (
-                    <Barcode className="h-5 w-5 text-muted-foreground" />
-                  )}
+                  {getIcon(item.type)}
                 </div>
                 <div className="flex-1">
                   <p className="break-all font-mono text-sm">{item.content}</p>

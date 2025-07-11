@@ -2,3 +2,4 @@
 import './flows/analyze-code-flow';
 import './flows/generate-image-flow';
 import './flows/text-to-speech-flow';
+import './flows/generate-qr-content-flow';

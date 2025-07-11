@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -5,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2 } from "lucide-react";
+import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode } from "lucide-react";
 import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { type HistoryItem } from "@/components/scan-history";
 
 interface ScannerProps {
   type: "QR" | "Barcode";
+  onScan: (item: HistoryItem) => void;
 }
 
 const mockData = {
@@ -18,7 +21,7 @@ const mockData = {
   Barcode: "8414906123456",
 };
 
-export function Scanner({ type }: ScannerProps) {
+export function Scanner({ type, onScan }: ScannerProps) {
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -47,7 +50,9 @@ export function Scanner({ type }: ScannerProps) {
       }
     };
 
-    getCameraPermission();
+    if (hasCameraPermission === null) {
+      getCameraPermission();
+    }
 
     return () => {
       if (videoRef.current && videoRef.current.srcObject) {
@@ -55,7 +60,7 @@ export function Scanner({ type }: ScannerProps) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [toast]);
+  }, [toast, hasCameraPermission]);
 
 
   const handleScan = () => {
@@ -65,6 +70,7 @@ export function Scanner({ type }: ScannerProps) {
     setTimeout(() => {
       const result = mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`);
       setScanResult(result);
+      onScan({ content: result, type: type, timestamp: new Date().toISOString() });
       setIsScanning(false);
 
       if (type === 'QR') {
@@ -113,14 +119,19 @@ export function Scanner({ type }: ScannerProps) {
     return (
       <Card className="w-full shadow-lg">
         <CardHeader>
-          <CardTitle>{type} Scan Result</CardTitle>
-          <CardDescription>The following data was successfully scanned.</CardDescription>
+          <div className="flex items-center gap-3">
+             {type === "QR" ? <QrCode className="h-8 w-8 text-primary" /> : <Barcode className="h-8 w-8 text-primary" />}
+            <div>
+                <CardTitle>{type} Scanned Successfully!</CardTitle>
+                <CardDescription>The following data was read from the code.</CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <p className="break-all rounded-md bg-muted p-4 font-mono text-sm text-muted-foreground">{scanResult}</p>
           {type === 'QR' && (
             <div className="mt-4">
-              <Accordion type="single" collapsible className="w-full">
+              <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                 <AccordionItem value="item-1">
                   <AccordionTrigger>
                     <div className="flex items-center gap-2">
@@ -130,11 +141,18 @@ export function Scanner({ type }: ScannerProps) {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
+                    {isAnalyzing && <p className="text-sm text-muted-foreground">Analyzing...</p>}
                     {analysis ? (
-                      <div className="space-y-2 text-sm">
-                        <p><strong>URL Type:</strong> {analysis.urlType}</p>
-                        <p><strong>Risk Assessment:</strong> {analysis.riskAssessment}</p>
-                        <p className="pt-2">{analysis.summary}</p>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <LinkIcon className="h-4 w-4 mt-1" />
+                          <div><strong>URL Type:</strong> {analysis.urlType}</div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                           <Check className="h-4 w-4 mt-1 text-green-500" />
+                          <div><strong>Risk Assessment:</strong> {analysis.riskAssessment}</div>
+                        </div>
+                        <p className="pt-2 italic">{analysis.summary}</p>
                       </div>
                     ) : (
                       !isAnalyzing && <p className="text-sm text-muted-foreground">No analysis available.</p>
@@ -179,7 +197,7 @@ export function Scanner({ type }: ScannerProps) {
 
           {isScanning && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                <div className="absolute top-0 h-1 w-full bg-primary/70 animate-[scan-line_2s_ease-in-out_infinite]" />
+                <div className="absolute top-0 h-1 w-full bg-primary/70 animate-[scan-line_2s_ease-in-out_infinite]" style={{ animationName: 'scan-line' }} />
             </div>
           )}
         </div>

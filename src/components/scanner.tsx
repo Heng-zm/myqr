@@ -35,29 +35,30 @@ export function Scanner({ type, onScan }: ScannerProps) {
   const [audio, setAudio] = useState<TextToSpeechOutput | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const stopScanning = useCallback(() => {
-    setIsScanning(false);
+  const stopScanningAnimation = useCallback(() => {
     if (animationFrameId.current) {
       cancelAnimationFrame(animationFrameId.current);
+      animationFrameId.current = undefined;
     }
   }, []);
-  
+
   const stopCameraStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      videoRef.current.srcObject = null;
     }
   }, []);
 
   const handleScanSuccess = useCallback((result: string) => {
+    setIsScanning(false);
     setScanResult(result);
     onScan({ content: result, type: type, timestamp: new Date().toISOString() });
-    stopScanning();
     runAnalysis(result);
-  }, [onScan, stopScanning, type]);
+    // Cleanup is handled by the useEffect return function
+  }, [onScan, type]);
 
   const scan = useCallback(() => {
     if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
@@ -84,7 +85,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
   }, [handleScanSuccess]);
   
   useEffect(() => {
-    const getCameraPermission = async () => {
+    const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         streamRef.current = stream;
@@ -92,12 +93,14 @@ export function Scanner({ type, onScan }: ScannerProps) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
-             videoRef.current?.play().catch(console.error);
+            videoRef.current?.play().catch(console.error);
+            animationFrameId.current = requestAnimationFrame(scan);
           };
         }
       } catch (error) {
         console.error("Error accessing camera:", error);
         setHasCameraPermission(false);
+        setIsScanning(false);
         toast({
           variant: 'destructive',
           title: 'Camera Access Denied',
@@ -106,30 +109,26 @@ export function Scanner({ type, onScan }: ScannerProps) {
       }
     };
 
-    if (isScanning && hasCameraPermission !== true) {
-        getCameraPermission();
-    }
-    
-    if (isScanning && hasCameraPermission) {
-      animationFrameId.current = requestAnimationFrame(scan);
-    } else {
-        stopScanning();
+    if (isScanning) {
+      startCamera();
     }
 
     return () => {
-      stopScanning();
-      if (!isScanning){
-        stopCameraStream();
-      }
+      stopScanningAnimation();
+      stopCameraStream();
     };
-  }, [isScanning, hasCameraPermission, scan, stopScanning, stopCameraStream, toast]);
+  }, [isScanning, scan, stopCameraStream, stopScanningAnimation, toast]);
 
 
   const handleStartScan = () => {
-    setIsScanning(true);
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
+    setIsScanning(true);
+  };
+  
+  const handleStopScan = () => {
+    setIsScanning(false);
   };
 
   const runAnalysis = async (content: string) => {
@@ -284,50 +283,44 @@ export function Scanner({ type, onScan }: ScannerProps) {
        </CardHeader>
       <CardContent className="flex flex-col items-center justify-center p-6">
         <div className="relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed border-primary/20 bg-muted overflow-hidden">
-          {(!isScanning && hasCameraPermission !== true) && (
+          {(!isScanning && hasCameraPermission !== false) && (
             <div className="flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-                {hasCameraPermission === false ? (
-                    <>
-                        <VideoOff className="h-12 w-12 mb-2" />
-                        <p className="font-semibold">Camera access denied</p>
-                        <p className="text-xs">Please allow camera access in your browser settings.</p>
-                    </>
-                ) : (
-                    <>
-                        <QrCode className="h-12 w-12 mb-2" />
-                        <p className="font-semibold">Ready to Scan</p>
-                    </>
-                )}
-             </div>
+              <QrCode className="h-12 w-12 mb-2" />
+              <p className="font-semibold">Ready to Scan</p>
+            </div>
           )}
 
-          <video ref={videoRef} className={`w-full h-full object-cover ${!isScanning && 'hidden'}`} playsInline muted/>
+          <video ref={videoRef} className={`w-full h-full object-cover ${!isScanning && 'hidden'}`} playsInline autoPlay muted />
 
-          {isScanning && !hasCameraPermission && (
+          {isScanning && hasCameraPermission === null && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80">
               <Loader2 className="h-12 w-12 mb-2 animate-spin" />
               <p>Requesting camera...</p>
             </div>
           )}
+          
+          {hasCameraPermission === false && (
+             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80">
+                <VideoOff className="h-12 w-12 mb-2" />
+                <p className="font-semibold">Camera access denied</p>
+                <p className="text-xs">Allow access in your browser settings.</p>
+             </div>
+          )}
 
-          {isScanning && (
+          {isScanning && hasCameraPermission && (
             <div className="absolute inset-0">
-                <div className="absolute top-0 h-1 w-full bg-primary/70 animate-[scan-line_2s_ease-in-out_infinite]" style={{ animationName: 'scan-line' }} />
+                <div className="absolute top-0 h-1 w-full bg-primary/70" style={{ animation: 'scan-line 2s ease-in-out infinite' }} />
             </div>
           )}
           <canvas ref={canvasRef} className="hidden" />
         </div>
         
-        {hasCameraPermission === false && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertTitle>Camera Access Required</AlertTitle>
-            <AlertDescription>
-              Please allow camera access in your browser settings to use this feature.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Button onClick={isScanning ? () => setIsScanning(false) : handleStartScan} className="w-full" size="lg">
+        <Button 
+          onClick={isScanning ? handleStopScan : handleStartScan} 
+          className="w-full" 
+          size="lg"
+          disabled={hasCameraPermission === false}
+        >
           {isScanning ? (
             <>
               <Loader2 className="animate-spin" />

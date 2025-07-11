@@ -89,8 +89,8 @@ export default {
           },
         },
         'scan-line': {
-          '0%': { transform: 'translateY(0)' },
-          '100%': { transform: 'translateY(16rem)' },
+          '0%': { transform: 'translateY(-10%)' },
+          '100%': { transform: 'translateY(100%)' },
         }
       },
       animation: {

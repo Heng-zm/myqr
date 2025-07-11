@@ -87,21 +87,11 @@ export function Scanner({ type, onScan }: ScannerProps) {
   
   useEffect(() => {
     const startCamera = async () => {
-      // If permission is already denied, don't ask again.
-      if (hasCameraPermission === false) {
-        toast({
-            variant: 'destructive',
-            title: 'Camera Access Required',
-            description: 'Please enable camera permissions in your browser settings to use this feature.',
-        });
-        setIsScanning(false);
-        return;
-      }
-
-      // Reset states
+      // Always reset states when starting
       setScanResult(null);
       setAnalysis(null);
       setAudio(null);
+      setHasCameraPermission(null);
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -115,11 +105,15 @@ export function Scanner({ type, onScan }: ScannerProps) {
       } catch (error) {
         console.error("Error accessing camera:", error);
         setHasCameraPermission(false);
-        setIsScanning(false);
+        setIsScanning(false); // Stop the scanning state
+        let description = 'There was an error accessing the camera.';
+        if (error instanceof Error && error.name === "NotAllowedError") {
+            description = 'Please enable camera permissions in your browser settings to use this app.';
+        }
         toast({
           variant: 'destructive',
           title: 'Camera Access Denied',
-          description: 'Please enable camera permissions in your browser settings to use this app.',
+          description: description,
         });
       }
     };
@@ -135,7 +129,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
       stopScanningAnimation();
       stopCameraStream();
     };
-  }, [isScanning, scan, stopCameraStream, stopScanningAnimation, toast, hasCameraPermission]);
+  }, [isScanning, scan, stopCameraStream, stopScanningAnimation, toast]);
 
 
   const handleStartScan = () => {
@@ -318,10 +312,10 @@ export function Scanner({ type, onScan }: ScannerProps) {
           )}
           
           {hasCameraPermission === false && (
-             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80">
+             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
                 <VideoOff className="h-12 w-12 mb-2" />
                 <p className="font-semibold">Camera access denied</p>
-                <p className="text-xs">Allow access in your browser settings.</p>
+                <p className="text-xs">Please allow camera access in your browser settings to use this feature.</p>
              </div>
           )}
 

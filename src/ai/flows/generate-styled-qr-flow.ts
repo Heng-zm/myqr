@@ -36,9 +36,11 @@ const generateStyledQrFlow = ai.defineFlow(
     const {media} = await ai.generate({
       model: 'googleai/gemini-2.0-flash-preview-image-generation',
       prompt: `Generate a visually stunning, artistic, and creative QR code.
-- The QR code must be perfectly scannable and must contain the following exact data: "${content}"
-- The visual style of the QR code should be inspired by the following theme: "${stylePrompt}"
-- The final image should be square. The QR code should be the main subject of the image, integrated beautifully into the art style.
+**CRITICAL INSTRUCTION: The QR code's scannability is the #1 priority.**
+- The QR code MUST be perfectly scannable and contain this exact data: "${content}"
+- The visual style of the QR code should be inspired by this theme: "${stylePrompt}"
+- Integrate the style creatively, but DO NOT compromise the QR code's core structure (the black and white squares). It must have high contrast.
+- The final image must be square.
 - Do not include any text in the image.`,
       config: {
         responseModalities: ['TEXT', 'IMAGE'],

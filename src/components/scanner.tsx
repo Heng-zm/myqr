@@ -72,10 +72,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
       setScanResult(result);
       onScan({ content: result, type: type, timestamp: new Date().toISOString() });
       setIsScanning(false);
-
-      if (type === 'QR') {
-        runAnalysis(result);
-      }
+      runAnalysis(result);
     }, 2200);
   };
 
@@ -129,7 +126,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
         </CardHeader>
         <CardContent>
           <p className="break-all rounded-md bg-muted p-4 font-mono text-sm text-muted-foreground">{scanResult}</p>
-          {type === 'QR' && (
+          
             <div className="mt-4">
               <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                 <AccordionItem value="item-1">
@@ -146,7 +143,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
                       <div className="space-y-3 text-sm">
                         <div className="flex items-start gap-2">
                           <LinkIcon className="h-4 w-4 mt-1" />
-                          <div><strong>URL Type:</strong> {analysis.urlType}</div>
+                          <div><strong>Content Type:</strong> {analysis.contentType}</div>
                         </div>
                         <div className="flex items-start gap-2">
                            <Check className="h-4 w-4 mt-1 text-green-500" />
@@ -161,7 +158,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
                 </AccordionItem>
               </Accordion>
             </div>
-          )}
+          
         </CardContent>
         <CardFooter className="flex justify-end gap-2">
           <Button variant="outline" onClick={handleScanAgain}>

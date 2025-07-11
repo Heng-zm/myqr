@@ -110,30 +110,27 @@ export function QrGenerator() {
       </CardHeader>
       <CardContent className="space-y-4">
         {qrCodeData ? (
-          <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="flex flex-col items-center justify-center space-y-4 rounded-lg bg-muted/50 p-6">
              {generatedImage ? (
                 <Image
                   src={generatedImage.imageUrl}
                   alt="AI generated image"
                   width={288}
                   height={288}
-                  className="rounded-lg border aspect-square object-cover"
+                  className="rounded-lg border aspect-square object-cover shadow-md"
                 />
              ) : isGeneratingImage ? (
-                <div className="flex flex-col items-center justify-center h-72 w-72 rounded-lg border bg-muted">
+                <div className="flex flex-col items-center justify-center h-72 w-72 rounded-lg border bg-background/50">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="mt-4 text-sm text-muted-foreground">Generating your image...</p>
                 </div>
              ) : (
-                <div className="bg-white p-4 rounded-lg border h-72 w-72 flex items-center justify-center">
+                <div className="bg-white p-4 rounded-lg border shadow-md h-72 w-72 flex items-center justify-center">
                     <QRCode id="QRCode" value={qrCodeData} size={256} />
                 </div>
              )}
 
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="outline" onClick={handleReset}>
-                <RefreshCw /> Create Another
-              </Button>
+            <div className="flex flex-wrap justify-center gap-2 pt-4">
               {!generatedImage && (
                 <Button onClick={handleGenerateImage} disabled={isGeneratingImage}>
                   {isGeneratingImage ? <Loader2 className="animate-spin" /> : <Bot />}
@@ -156,14 +153,21 @@ export function QrGenerator() {
         )}
       </CardContent>
       <CardFooter className="flex justify-end gap-2">
-        {qrCodeData && !generatedImage ? (
-            <>
+        {qrCodeData ? (
+          <>
+            <Button variant="ghost" onClick={handleReset}>
+                <RefreshCw /> Create Another
+            </Button>
+            {!generatedImage && (
+              <>
                 {navigator.share && <Button variant="outline" onClick={handleShare}><Share2 />Share</Button>}
                 <Button onClick={handleDownload}><Download />Download QR</Button>
-            </>
-        ) : !qrCodeData ? (
+              </>
+            )}
+          </>
+        ) : (
             <Button onClick={handleGenerate}>Generate QR Code</Button>
-        ) : null }
+        )}
       </CardFooter>
     </Card>
   );

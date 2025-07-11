@@ -197,7 +197,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
   
   if (scanResult) {
     return (
-      <Card className="w-full shadow-lg">
+      <Card className="w-full shadow-lg border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
              <div className="bg-primary/10 text-primary p-3 rounded-lg">
@@ -210,7 +210,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="p-4 rounded-lg bg-muted/50">
+          <div className="p-4 rounded-lg bg-muted">
             <p className="break-all font-mono text-sm text-muted-foreground">{scanResult}</p>
           </div>
           
@@ -277,7 +277,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
   }
 
   return (
-    <Card className="w-full shadow-lg">
+    <Card className="w-full shadow-lg border-primary/20">
        <CardHeader>
         <CardTitle>Scan a {type} Code</CardTitle>
         <CardDescription>Position the code inside the frame to scan it automatically.</CardDescription>

@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode } from "lucide-react";
+import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2, Link as LinkIcon, Barcode, Volume2, Waves } from "lucide-react";
 import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
+import { textToSpeech, TextToSpeechOutput } from "@/ai/flows/text-to-speech-flow";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { type HistoryItem } from "@/components/scan-history";
 
@@ -30,6 +31,10 @@ export function Scanner({ type, onScan }: ScannerProps) {
   const { toast } = useToast();
   const [analysis, setAnalysis] = useState<AnalyzeCodeOutput | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
+  const [audio, setAudio] = useState<TextToSpeechOutput | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -67,6 +72,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
     setIsScanning(true);
     setScanResult(null);
     setAnalysis(null);
+    setAudio(null);
     setTimeout(() => {
       const result = mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`);
       setScanResult(result);
@@ -94,6 +100,31 @@ export function Scanner({ type, onScan }: ScannerProps) {
     }
   };
 
+  const handleTextToSpeech = async () => {
+    if (!analysis?.summary) return;
+    setIsGeneratingSpeech(true);
+    setAudio(null);
+    try {
+      const result = await textToSpeech({ text: analysis.summary });
+      setAudio(result);
+    } catch (error) {
+       console.error("Error generating speech:", error);
+      toast({
+        variant: "destructive",
+        title: "Text-to-Speech Failed",
+        description: "Could not generate audio for the analysis.",
+      });
+    } finally {
+      setIsGeneratingSpeech(false);
+    }
+  }
+  
+  useEffect(() => {
+    if(audio?.audioUrl && audioRef.current){
+        audioRef.current.play();
+    }
+  }, [audio])
+
 
   const handleCopy = () => {
     if (!scanResult) return;
@@ -110,6 +141,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
   const handleScanAgain = () => {
     setScanResult(null);
     setAnalysis(null);
+    setAudio(null);
   };
   
   if (scanResult) {
@@ -149,7 +181,19 @@ export function Scanner({ type, onScan }: ScannerProps) {
                            <Check className="h-4 w-4 mt-1 text-green-500" />
                           <div><strong>Risk Assessment:</strong> {analysis.riskAssessment}</div>
                         </div>
-                        <p className="pt-2 italic">{analysis.summary}</p>
+                        <div className="flex items-start gap-2 pt-2">
+                           <p className="italic flex-1">{analysis.summary}</p>
+                           <Button 
+                             variant="outline" 
+                             size="icon" 
+                             onClick={handleTextToSpeech} 
+                             disabled={isGeneratingSpeech}
+                             className="h-8 w-8"
+                           >
+                            {isGeneratingSpeech ? <Waves className="h-4 w-4 animate-pulse" /> : <Volume2 className="h-4 w-4" />}
+                           </Button>
+                        </div>
+                        {audio && <audio ref={audioRef} src={audio.audioUrl} className="w-full mt-2 h-8" controls />}
                       </div>
                     ) : (
                       !isAnalyzing && <p className="text-sm text-muted-foreground">No analysis available.</p>

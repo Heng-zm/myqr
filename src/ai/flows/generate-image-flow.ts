@@ -33,7 +33,7 @@ const generateImageFlow = ai.defineFlow(
   async (input) => {
     const {media} = await ai.generate({
       model: 'googleai/gemini-2.0-flash-preview-image-generation',
-      prompt: `Generate a visually appealing, high-quality image that represents the following concept or text: "${input.prompt}". The image should be abstract or metaphorical, suitable for being associated with a QR code.`,
+      prompt: `Generate a visually appealing, high-quality, abstract background image that represents the following concept or text: "${input.prompt}". The image should be suitable as a backdrop for a QR code, so it should not contain any text or overly complex focal points.`,
       config: {
         responseModalities: ['TEXT', 'IMAGE'],
       },

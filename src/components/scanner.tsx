@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import jsQR from "jsqr";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,17 +18,14 @@ interface ScannerProps {
   onScan: (item: HistoryItem) => void;
 }
 
-const mockData = {
-  QR: "https://firebase.google.com/",
-  Barcode: "8414906123456",
-};
-
 export function Scanner({ type, onScan }: ScannerProps) {
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameId = useRef<number>();
   const { toast } = useToast();
   const [analysis, setAnalysis] = useState<AnalyzeCodeOutput | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -35,6 +33,62 @@ export function Scanner({ type, onScan }: ScannerProps) {
   const [audio, setAudio] = useState<TextToSpeechOutput | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  const stopScanning = useCallback(() => {
+    setIsScanning(false);
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
+    }
+  }, []);
+
+  const handleScanSuccess = useCallback((result: string) => {
+    setScanResult(result);
+    onScan({ content: result, type: type, timestamp: new Date().toISOString() });
+    stopScanning();
+    runAnalysis(result);
+  }, [onScan, stopScanning, type]);
+
+  const scan = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || !isScanning) {
+      return;
+    }
+  
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+  
+    if (context && video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: type === 'QR' ? "dontInvert" : "attemptBoth",
+      });
+  
+      if (code && code.data) {
+        handleScanSuccess(code.data);
+      }
+    }
+  
+    animationFrameId.current = requestAnimationFrame(scan);
+  }, [isScanning, handleScanSuccess, type]);
+  
+
+  useEffect(() => {
+    if (isScanning && hasCameraPermission) {
+      animationFrameId.current = requestAnimationFrame(scan);
+    } else {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    }
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, [isScanning, hasCameraPermission, scan]);
+  
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -43,6 +97,9 @@ export function Scanner({ type, onScan }: ScannerProps) {
         setHasCameraPermission(true);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+             videoRef.current?.play();
+          };
         }
       } catch (error) {
         console.error("Error accessing camera:", error);
@@ -68,18 +125,11 @@ export function Scanner({ type, onScan }: ScannerProps) {
   }, [toast, hasCameraPermission]);
 
 
-  const handleScan = () => {
+  const handleStartScan = () => {
     setIsScanning(true);
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
-    setTimeout(() => {
-      const result = mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`);
-      setScanResult(result);
-      onScan({ content: result, type: type, timestamp: new Date().toISOString() });
-      setIsScanning(false);
-      runAnalysis(result);
-    }, 2200);
   };
 
   const runAnalysis = async (content: string) => {
@@ -142,6 +192,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
     setScanResult(null);
     setAnalysis(null);
     setAudio(null);
+    // Don't need to call handleStartScan, as user will click button to start again
   };
   
   if (scanResult) {
@@ -223,7 +274,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
       <CardContent className="flex flex-col items-center justify-center p-6 pt-8">
         <div className="relative mb-6 flex h-64 w-full items-center justify-center rounded-lg border-4 border-dashed border-primary/20 bg-muted overflow-hidden">
           {hasCameraPermission === true ? (
-             <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+             <video ref={videoRef} className="w-full h-full object-cover" playsInline />
           ) : hasCameraPermission === false ? (
              <div className="flex flex-col items-center justify-center text-muted-foreground">
                 <VideoOff className="h-16 w-16 mb-2" />
@@ -241,6 +292,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
                 <div className="absolute top-0 h-1 w-full bg-primary/70 animate-[scan-line_2s_ease-in-out_infinite]" style={{ animationName: 'scan-line' }} />
             </div>
           )}
+          <canvas ref={canvasRef} className="hidden" />
         </div>
         
         {hasCameraPermission === false && (
@@ -256,7 +308,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
         <p className="mb-6 text-center text-sm text-muted-foreground">
           Position the {type} code in front of the camera and press the button.
         </p>
-        <Button onClick={handleScan} disabled={isScanning || !hasCameraPermission} className="w-full" size="lg">
+        <Button onClick={handleStartScan} disabled={isScanning || !hasCameraPermission} className="w-full" size="lg">
           {isScanning ? "Scanning..." : `Start ${type} Scan`}
         </Button>
       </CardContent>

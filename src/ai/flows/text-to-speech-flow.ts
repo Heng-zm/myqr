@@ -20,8 +20,9 @@ export type TextToSpeechInput = z.infer<typeof TextToSpeechInputSchema>;
 const TextToSpeechOutputSchema = z.object({
   audioUrl: z
     .string()
+    .nullable()
     .describe(
-      "The data URI of the generated audio. Expected format: 'data:audio/wav;base64,<encoded_data>'."
+      "The data URI of the generated audio. Expected format: 'data:audio/wav;base64,<encoded_data>'. Null if generation fails."
     ),
 });
 export type TextToSpeechOutput = z.infer<typeof TextToSpeechOutputSchema>;
@@ -64,32 +65,42 @@ const textToSpeechFlow = ai.defineFlow(
     outputSchema: TextToSpeechOutputSchema,
   },
   async ({text}) => {
-    const {media} = await ai.generate({
-      model: googleAI.model('gemini-2.5-flash-preview-tts'),
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {voiceName: 'Algenib'},
-          },
-        },
-      },
-      prompt: text,
-    });
-
-    if (!media?.url) {
-      throw new Error('no media returned from TTS model');
+    if (!text) {
+      return { audioUrl: null };
     }
 
-    const audioBuffer = Buffer.from(
-      media.url.substring(media.url.indexOf(',') + 1),
-      'base64'
-    );
-
-    const wavBase64 = await toWav(audioBuffer);
-
-    return {
-      audioUrl: 'data:audio/wav;base64,' + wavBase64,
-    };
+    try {
+      const {media} = await ai.generate({
+        model: googleAI.model('gemini-2.5-flash-preview-tts'),
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {voiceName: 'Algenib'},
+            },
+          },
+        },
+        prompt: text,
+      });
+  
+      if (!media?.url) {
+        console.error('No media returned from TTS model');
+        return { audioUrl: null };
+      }
+  
+      const audioBuffer = Buffer.from(
+        media.url.substring(media.url.indexOf(',') + 1),
+        'base64'
+      );
+  
+      const wavBase64 = await toWav(audioBuffer);
+  
+      return {
+        audioUrl: 'data:audio/wav;base64,' + wavBase64,
+      };
+    } catch(e) {
+      console.error("Error in textToSpeechFlow", e);
+      return { audioUrl: null };
+    }
   }
 );

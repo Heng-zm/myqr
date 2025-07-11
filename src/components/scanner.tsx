@@ -102,39 +102,32 @@ export function Scanner({ type, onScan }: ScannerProps) {
     }
   }, [handleScanSuccess, isScanning, scanFromCanvas]);
 
-  const startCamera = useCallback(async () => {
-    stopCamera(); 
-    setHasCameraPermission(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
-      setHasCameraPermission(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+  useEffect(() => {
+    const getCameraPermission = async () => {
+      // Only ask for permission if it hasn't been determined yet
+      if (hasCameraPermission === null) {
+        try {
+          // We ask for the stream but don't use it here, just to trigger the permission prompt.
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setHasCameraPermission(true);
+          // Stop the tracks immediately as we'll request it again when user clicks scan.
+          stream.getTracks().forEach(track => track.stop());
+        } catch (error) {
+          console.error('Error accessing camera:', error);
+          setHasCameraPermission(false);
+        }
       }
-      return stream;
-    } catch (error) {
-      console.error("Error accessing camera:", error);
-      setHasCameraPermission(false);
-      let description = 'There was an error accessing the camera.';
-      if (error instanceof Error && error.name === "NotAllowedError") {
-          description = 'Please enable camera permissions in your browser settings to use this app.';
-      }
-      toast({
-        variant: 'destructive',
-        title: 'Camera Access Denied',
-        description: description,
-      });
-      return null;
-    }
-  }, [stopCamera, toast]);
-  
+    };
+    
+    getCameraPermission();
+  }, [hasCameraPermission]);
+
 
   useEffect(() => {
+    // Cleanup function to stop camera when component unmounts
     return () => {
-        stopScanningAnimation();
-        stopCamera();
+      stopCamera();
+      stopScanningAnimation();
     };
   }, [stopCamera, stopScanningAnimation]);
 
@@ -150,12 +143,32 @@ export function Scanner({ type, onScan }: ScannerProps) {
 
 
   const handleStartScan = async () => {
-    const stream = await startCamera();
-    if(stream) {
-        setScanResult(null);
-        setAnalysis(null);
-        setAudio(null);
-        setIsScanning(true);
+    setScanResult(null);
+    setAnalysis(null);
+    setAudio(null);
+    setIsScanning(true);
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      setHasCameraPermission(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.error("Error accessing camera:", error);
+      setIsScanning(false);
+      setHasCameraPermission(false);
+      let description = 'There was an error accessing the camera.';
+      if (error instanceof Error && error.name === "NotAllowedError") {
+          description = 'Please enable camera permissions in your browser settings to use this app.';
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Denied',
+        description: description,
+      });
     }
   };
   
@@ -223,7 +236,15 @@ export function Scanner({ type, onScan }: ScannerProps) {
     setAudio(null);
     try {
       const result = await textToSpeech({ text: analysis.summary });
-      setAudio(result);
+      if (result.audioUrl) {
+        setAudio(result);
+      } else {
+         toast({
+          variant: "destructive",
+          title: "Text-to-Speech Failed",
+          description: "Could not generate audio for the analysis at this time.",
+        });
+      }
     } catch (error) {
        console.error("Error generating speech:", error);
       toast({
@@ -316,7 +337,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
                               {isGeneratingSpeech ? <Waves className="h-4 w-4 animate-pulse" /> : <Volume2 className="h-4 w-4" />}
                               {isGeneratingSpeech ? "Generating..." : "Read Aloud"}
                             </Button>
-                            {audio && <audio ref={audioRef} src={audio.audioUrl} className="w-full h-9 flex-1" controls />}
+                            {audio && audio.audioUrl && <audio ref={audioRef} src={audio.audioUrl} className="w-full h-9 flex-1" controls />}
                            </div>
                         </div>
                       </div>
@@ -350,11 +371,11 @@ export function Scanner({ type, onScan }: ScannerProps) {
         <CardDescription>Position the code inside the frame to scan it automatically, or upload an image.</CardDescription>
        </CardHeader>
       <CardContent className="flex flex-col items-center justify-center p-6">
-        <div className={`relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed bg-muted overflow-hidden ${isScanning ? 'border-primary animate-pulse' : 'border-primary/20'}`}>
+        <div className={`relative mb-4 flex aspect-square w-full max-w-sm items-center justify-center rounded-lg border-4 border-dashed bg-muted overflow-hidden ${isScanning ? 'border-primary animate-pulse-border' : 'border-primary/20'}`}>
           
           <video ref={videoRef} className={`w-full h-full object-cover ${isScanning ? '' : 'hidden'}`} playsInline autoPlay muted />
 
-           { !isScanning && (
+           { !isScanning && hasCameraPermission !== false && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
               <QrCode className="h-12 w-12 mb-2" />
               <p className="font-semibold">Ready to Scan</p>
@@ -363,11 +384,13 @@ export function Scanner({ type, onScan }: ScannerProps) {
           )}
 
           { hasCameraPermission === false && (
-             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-background/80 p-4 text-center">
-                <VideoOff className="h-12 w-12 mb-2" />
-                <p className="font-semibold">Camera access denied</p>
-                <p className="text-xs">Please allow camera access in your browser settings to use this feature.</p>
-             </div>
+             <Alert variant="destructive" className="absolute inset-4 h-fit">
+                <VideoOff className="h-4 w-4" />
+                <AlertTitle>Camera Access Denied</AlertTitle>
+                <AlertDescription>
+                  Please allow camera access in your browser settings to use this feature.
+                </AlertDescription>
+              </Alert>
           )}
 
           <canvas ref={canvasRef} className="hidden" />
@@ -393,6 +416,7 @@ export function Scanner({ type, onScan }: ScannerProps) {
             <Button 
               onClick={isScanning ? handleStopScan : handleStartScan} 
               size="lg"
+              disabled={hasCameraPermission === false}
             >
               {isScanning ? (
                 <>

@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff } from "lucide-react";
+import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff, Bot, Loader2 } from "lucide-react";
+import { analyzeCode, AnalyzeCodeOutput } from "@/ai/flows/analyze-code-flow";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 interface ScannerProps {
   type: "QR" | "Barcode";
@@ -23,6 +25,8 @@ export function Scanner({ type }: ScannerProps) {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+  const [analysis, setAnalysis] = useState<AnalyzeCodeOutput | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -57,11 +61,36 @@ export function Scanner({ type }: ScannerProps) {
   const handleScan = () => {
     setIsScanning(true);
     setScanResult(null);
+    setAnalysis(null);
     setTimeout(() => {
-      setScanResult(mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`));
+      const result = mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`);
+      setScanResult(result);
       setIsScanning(false);
+
+      if (type === 'QR') {
+        runAnalysis(result);
+      }
     }, 2200);
   };
+
+  const runAnalysis = async (content: string) => {
+    setIsAnalyzing(true);
+    setAnalysis(null);
+    try {
+      const analysisResult = await analyzeCode({ content });
+      setAnalysis(analysisResult);
+    } catch (error) {
+      console.error("Error analyzing code:", error);
+      toast({
+        variant: "destructive",
+        title: "Analysis Failed",
+        description: "Could not get AI analysis for the scanned code.",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
 
   const handleCopy = () => {
     if (!scanResult) return;
@@ -77,6 +106,7 @@ export function Scanner({ type }: ScannerProps) {
 
   const handleScanAgain = () => {
     setScanResult(null);
+    setAnalysis(null);
   };
   
   if (scanResult) {
@@ -88,6 +118,32 @@ export function Scanner({ type }: ScannerProps) {
         </CardHeader>
         <CardContent>
           <p className="break-all rounded-md bg-muted p-4 font-mono text-sm text-muted-foreground">{scanResult}</p>
+          {type === 'QR' && (
+            <div className="mt-4">
+              <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="item-1">
+                  <AccordionTrigger>
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-5 w-5 text-primary" />
+                      <span>AI Analysis</span>
+                      {isAnalyzing && <Loader2 className="h-4 w-4 animate-spin" />}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {analysis ? (
+                      <div className="space-y-2 text-sm">
+                        <p><strong>URL Type:</strong> {analysis.urlType}</p>
+                        <p><strong>Risk Assessment:</strong> {analysis.riskAssessment}</p>
+                        <p className="pt-2">{analysis.summary}</p>
+                      </div>
+                    ) : (
+                      !isAnalyzing && <p className="text-sm text-muted-foreground">No analysis available.</p>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="flex justify-end gap-2">
           <Button variant="outline" onClick={handleScanAgain}>

@@ -11,7 +11,7 @@ export default function Home() {
           CodeScan
         </h1>
       </header>
-      <main className="w-full max-w-md">
+      <main className="w-full max-w-2xl">
         <Tabs defaultValue="qr" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="qr">QR Code</TabsTrigger>

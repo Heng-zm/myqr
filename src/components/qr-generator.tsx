@@ -8,23 +8,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Share2, Bot, Loader2, RefreshCw, Wand2 } from "lucide-react";
+import { Download, Share2, Bot, Loader2, RefreshCw, Wand2, Sparkles } from "lucide-react";
 import { generateImage, GenerateImageOutput } from "@/ai/flows/generate-image-flow";
 import { generateQrContent } from "@/ai/flows/generate-qr-content-flow";
+import { generateStyledQr, GenerateStyledQrOutput } from "@/ai/flows/generate-styled-qr-flow";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { useHistory } from "@/context/history-context";
+import { Separator } from "./ui/separator";
 
 interface QrGeneratorProps {}
 
 export function QrGenerator({}: QrGeneratorProps) {
   const { addHistoryItem } = useHistory();
   const [value, setValue] = useState("");
+  const [stylePrompt, setStylePrompt] = useState("");
   const [qrCodeData, setQrCodeData] = useState("");
   const { toast } = useToast();
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const [isGeneratingStyledQr, setIsGeneratingStyledQr] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<GenerateImageOutput & { prompt: string } | null>(null);
+  const [styledQr, setStyledQr] = useState<GenerateStyledQrOutput | null>(null);
   const [bgColor, setBgColor] = useState("#FFFFFF");
   const [fgColor, setFgColor] = useState("#000000");
 
@@ -39,6 +44,7 @@ export function QrGenerator({}: QrGeneratorProps) {
     }
     setQrCodeData(value);
     setGeneratedImage(null);
+    setStyledQr(null);
     addHistoryItem({
         content: value,
         type: 'Generated',
@@ -56,6 +62,8 @@ export function QrGenerator({}: QrGeneratorProps) {
         return;
     }
     setIsGeneratingContent(true);
+    setGeneratedImage(null);
+    setStyledQr(null);
     try {
         const result = await generateQrContent({ topic: value });
         setValue(result.content);
@@ -84,6 +92,7 @@ export function QrGenerator({}: QrGeneratorProps) {
     try {
       const result = await generateImage({ prompt: currentQrData });
       if (qrCodeData === currentQrData) {
+        setStyledQr(null);
         setGeneratedImage({ ...result, prompt: currentQrData });
       }
     } catch (error) {
@@ -100,10 +109,51 @@ export function QrGenerator({}: QrGeneratorProps) {
     }
   }
 
+  const handleGenerateStyledQr = async () => {
+    if (!qrCodeData) return;
+    if (!stylePrompt) {
+      toast({
+        variant: "destructive",
+        title: "Style Prompt Required",
+        description: "Please describe the visual style you want for the QR code.",
+      });
+      return;
+    }
+    const currentQrData = qrCodeData;
+    setIsGeneratingStyledQr(true);
+    try {
+      const result = await generateStyledQr({ content: currentQrData, stylePrompt });
+      if (qrCodeData === currentQrData) {
+        setGeneratedImage(null);
+        setStyledQr(result);
+      }
+    } catch (error) {
+      console.error("Error generating styled QR:", error);
+       toast({
+        variant: "destructive",
+        title: "Styled QR Failed",
+        description: "Could not generate an AI-styled QR code.",
+      });
+    } finally {
+      if (qrCodeData === currentQrData) {
+        setIsGeneratingStyledQr(false);
+      }
+    }
+  }
+
   const handleDownload = () => {
     const svg = document.getElementById("QRCode");
-    const aiImage = document.getElementById("ai-background-image") as HTMLImageElement;
+    const aiBackgroundImage = document.getElementById("ai-background-image") as HTMLImageElement;
+    const styledQrImage = document.getElementById("ai-styled-qr-image") as HTMLImageElement;
 
+    if (styledQrImage) {
+        const link = document.createElement("a");
+        link.href = styledQrImage.src;
+        link.download = "styled-qrcode.png";
+        link.click();
+        return;
+    }
+    
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -136,14 +186,14 @@ export function QrGenerator({}: QrGeneratorProps) {
         qrImg.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`;
     };
 
-    if (generatedImage && aiImage) {
+    if (generatedImage && aiBackgroundImage) {
         const bgImg = new window.Image();
         bgImg.crossOrigin = "anonymous";
         bgImg.onload = () => {
             ctx.drawImage(bgImg, 0, 0, canvasSize, canvasSize);
             drawQrCode();
         };
-        bgImg.src = aiImage.src;
+        bgImg.src = aiBackgroundImage.src;
     } else {
         const tempCanvas = document.createElement("canvas");
         const tempCtx = tempCanvas.getContext("2d");
@@ -191,9 +241,13 @@ export function QrGenerator({}: QrGeneratorProps) {
   
   const handleReset = () => {
     setValue("");
+    setStylePrompt("");
     setQrCodeData("");
     setGeneratedImage(null);
+    setStyledQr(null);
   }
+
+  const isGenerating = isGeneratingImage || isGeneratingStyledQr;
 
   return (
     <Card className="w-full shadow-lg border-primary/20">
@@ -203,13 +257,21 @@ export function QrGenerator({}: QrGeneratorProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {qrCodeData ? (
-          <div className="flex flex-col items-center justify-center space-y-4 rounded-lg bg-muted/50 p-6">
+          <div className="flex flex-col items-center justify-center space-y-4">
              <div className="relative h-80 w-80 flex items-center justify-center rounded-lg border shadow-md overflow-hidden bg-background">
-                {isGeneratingImage ? (
+                {isGenerating ? (
                     <div className="flex flex-col items-center justify-center h-full w-full bg-background/50">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <p className="mt-4 text-sm text-muted-foreground">Generating your image...</p>
+                        <p className="mt-4 text-sm text-muted-foreground">Generating your masterpiece...</p>
                     </div>
+                ) : styledQr ? (
+                  <Image
+                      id="ai-styled-qr-image"
+                      src={styledQr.imageUrl}
+                      alt="AI generated styled QR code"
+                      layout="fill"
+                      objectFit="cover"
+                  />
                 ) : generatedImage && generatedImage.prompt === qrCodeData ? (
                     <>
                         <Image
@@ -231,11 +293,29 @@ export function QrGenerator({}: QrGeneratorProps) {
              </div>
 
             <div className="w-full space-y-4 pt-4">
-              <Button onClick={handleGenerateImage} disabled={isGeneratingImage} className="w-full">
-                {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                {isGeneratingImage ? 'Generating...' : 'Customize with AI Background'}
-              </Button>
-               {!generatedImage && (
+               <div className="space-y-3 pt-4 border-t border-border">
+                  <p className="text-sm font-medium text-center text-muted-foreground">Customize with AI</p>
+                   <div className="space-y-2">
+                      <Label htmlFor="style-prompt">AI Style Prompt</Label>
+                      <Input 
+                        id="style-prompt"
+                        placeholder="e.g., vintage floral, steampunk gears"
+                        value={stylePrompt}
+                        onChange={(e) => setStylePrompt(e.target.value)}
+                        disabled={isGenerating}
+                      />
+                   </div>
+                  <Button onClick={handleGenerateStyledQr} disabled={isGenerating} className="w-full">
+                    {isGeneratingStyledQr ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    {isGeneratingStyledQr ? 'Styling...' : 'Generate AI-Styled QR'}
+                  </Button>
+                  <Button onClick={handleGenerateImage} disabled={isGenerating} className="w-full" variant="outline">
+                    {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
+                    {isGeneratingImage ? 'Generating...' : 'Generate AI Background Only'}
+                  </Button>
+               </div>
+               
+              {!generatedImage && !styledQr && (
                 <div className="space-y-3 pt-4 border-t border-border">
                     <p className="text-sm font-medium text-center text-muted-foreground">Customize Colors</p>
                     <div className="flex gap-4 justify-center">
@@ -259,7 +339,7 @@ export function QrGenerator({}: QrGeneratorProps) {
               id="qr-content"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder="e.g. A journey of a thousand miles begins with a single step."
+              placeholder="e.g., A journey of a thousand miles begins with a single step."
               rows={4}
             />
             <div className="flex flex-col sm:flex-row gap-2">

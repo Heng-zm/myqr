@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { QrCode, ScanLine, Copy, Check, RefreshCw } from "lucide-react";
+import { QrCode, ScanLine, Copy, Check, RefreshCw, VideoOff } from "lucide-react";
 
 interface ScannerProps {
   type: "QR" | "Barcode";
@@ -18,36 +18,48 @@ const mockData = {
 
 export function Scanner({ type }: ScannerProps) {
   const [scanResult, setScanResult] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [isScanning, setIsScanning] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isLoading) {
-      setProgress(0);
-      timer = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            return 100;
-          }
-          return prev + 2;
+    const getCameraPermission = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        setHasCameraPermission(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (error) {
+        console.error("Error accessing camera:", error);
+        setHasCameraPermission(false);
+        toast({
+          variant: 'destructive',
+          title: 'Camera Access Denied',
+          description: 'Please enable camera permissions in your browser settings to use this app.',
         });
-      }, 40);
-    }
-    return () => {
-      clearInterval(timer);
+      }
     };
-  }, [isLoading]);
+
+    getCameraPermission();
+
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [toast]);
+
 
   const handleScan = () => {
-    setIsLoading(true);
+    setIsScanning(true);
     setScanResult(null);
     setTimeout(() => {
       setScanResult(mockData[type] + (type === 'QR' ? `?time=${Date.now()}` : `-${Math.floor(Math.random() * 900 + 100)}`));
-      setIsLoading(false);
+      setIsScanning(false);
     }, 2200);
   };
 
@@ -65,11 +77,8 @@ export function Scanner({ type }: ScannerProps) {
 
   const handleScanAgain = () => {
     setScanResult(null);
-    setProgress(0);
   };
   
-  const Icon = type === 'QR' ? QrCode : ScanLine;
-
   if (scanResult) {
     return (
       <Card className="w-full shadow-lg">
@@ -97,21 +106,43 @@ export function Scanner({ type }: ScannerProps) {
   return (
     <Card className="w-full shadow-lg">
       <CardContent className="flex flex-col items-center justify-center p-6 pt-8">
-        <div className="relative mb-6 flex h-48 w-48 items-center justify-center rounded-lg border-4 border-dashed border-primary/20 bg-primary/5">
-          <Icon className="h-24 w-24 text-primary/50" />
-          {isLoading && (
-             <div className="absolute bottom-4 left-4 right-4">
-               <Progress value={progress} className="h-2 w-full" />
-               <p className="mt-1 text-center text-xs text-primary">Scanning...</p>
+        <div className="relative mb-6 flex h-64 w-full items-center justify-center rounded-lg border-4 border-dashed border-primary/20 bg-muted overflow-hidden">
+          {hasCameraPermission === true ? (
+             <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+          ) : hasCameraPermission === false ? (
+             <div className="flex flex-col items-center justify-center text-muted-foreground">
+                <VideoOff className="h-16 w-16 mb-2" />
+                <p>Camera access denied</p>
              </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-muted-foreground">
+              <QrCode className="h-16 w-16 mb-2 animate-pulse" />
+              <p>Requesting camera...</p>
+            </div>
+          )}
+
+          {isScanning && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="absolute top-0 h-1 w-full bg-primary/70 animate-[scan-line_2s_ease-in-out_infinite]" />
+            </div>
           )}
         </div>
+        
+        {hasCameraPermission === false && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTitle>Camera Access Required</AlertTitle>
+            <AlertDescription>
+              Please allow camera access in your browser settings to use this feature.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <h3 className="mb-2 text-lg font-semibold text-foreground">Ready to Scan</h3>
         <p className="mb-6 text-center text-sm text-muted-foreground">
-          Position the {type} code inside the frame and press the button to start scanning.
+          Position the {type} code in front of the camera and press the button.
         </p>
-        <Button onClick={handleScan} disabled={isLoading} className="w-full" size="lg">
-          {isLoading ? "Processing..." : `Start ${type} Scan`}
+        <Button onClick={handleScan} disabled={isScanning || !hasCameraPermission} className="w-full" size="lg">
+          {isScanning ? "Scanning..." : `Start ${type} Scan`}
         </Button>
       </CardContent>
     </Card>
